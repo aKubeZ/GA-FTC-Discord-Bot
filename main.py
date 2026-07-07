@@ -1,7 +1,10 @@
+import math
+
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 import os
+import re
 
 import api
 import data
@@ -267,6 +270,135 @@ async def league(ctx: commands.Context, league_id: str):
 
     await embed.send(ctx)
 
+@bot.hybrid_command(name="season_data", description="seasons the data")
+async def season_data(ctx: commands.Context, year: str):
+    '''
+    seasons the data
+    '''
+    
+    season: util.Season = await data.get_season(ctx, year, verbose=False) # Can be null
+    if not season:
+        await ctx.send(f"Season {year} not found.")
+        return
+    
+    embed = util.Embed(
+        title=f"{year} Season",
+        description=season.game_name
+    )
+
+    embed.add_field(name="Event Count", value=season.event_count)
+    embed.add_field(name="Team Count", value=season.team_count)
+    embed.add_field(name="Kickoff", value=season.kickoff)
+    embed.add_field(name="Rookie Start", value=season.rookie_start)
+    await embed.send(ctx)
+
+@bot.hybrid_command(name="event", description="Gets event info")
+async def event(ctx: commands.Context, event_code: str):
+    '''
+    Gets event info
+    '''
+    event_code = event_code.upper()
+    event: util.Event = await data.get_event(ctx, event_code, verbose=False) # Can be null
+    if not event:
+        await ctx.send(f"Event {event_code} not found.")
+        return
+    
+    embed = util.Embed(
+        title=f"Event {event_code}",
+        description=f"{event.name}"
+    )
+
+    embed.add_field(name="League", value=event.league)
+    embed.add_field(name="Type", value=event.type)
+    embed.add_field(name="Field Count", value=event.field_count)
+    embed.add_field(name="Venue", value=event.venue)
+    embed.add_field(name="City", value=event.city)
+    embed.add_field(name="Address", value=event.address)
+    embed.add_field(name="Website", value=event.website if event.website and event.website != "" else "Not Available")
+    embed.add_field(name="Stream URL", value=event.stream_url if event.stream_url and event.stream_url != "" else "Not Available")
+    embed.add_field(name="Start Date", value=event.date_start)
+    embed.add_field(name="End Date", value=event.date_end)
+    await embed.send(ctx)
+
+@bot.hybrid_command(name="events", description="Lists event codes")
+async def events(ctx: commands.Context):
+    '''
+    Lists event codes
+    '''
+    
+    embed = util.Embed(
+        title=f"Georgia FTC Event Codes"
+    )
+
+    events_list: str = "- "
+    prev_league: str = ""
+    for i, event in enumerate(data.cache.events):
+        league: str = re.search(r'USGA([A-Z]*)(?:M1|M2|M3|M4|M5|M6|M7|LT|KO|OS)|USGA(CMP)', event.code).group(1)
+        if i == 0:
+            events_list += event.code
+            prev_league = league
+            continue
+        if prev_league != league:
+            events_list += "\n- "
+        else:
+            events_list += ", "
+        events_list += event.code
+        prev_league = league
+
+    embed.add_field(
+        name="Events List",
+        value=events_list
+    )
+
+    embed.add_field(
+        name="Specific Events",
+        value="Use `!event <event_id>` to see info about the event"
+    )
+    await embed.send(ctx)
+
+@bot.hybrid_command(name="rankings", description="Gets rankings of an event")
+async def rankings(ctx: commands.Context, event_code: str, page_num = 1):
+    '''
+    Gets rankings of an event.
+    RS = Ranking Score
+    PTS = Average Points (without penalties)
+    QA = Qualification Average
+    DQ = i actually dont know what this means its just called 'dq' in the docs
+    MP = Matches Played
+    MC = Matches Counted
+    '''
+    event_code = event_code.upper()
+    rankings: util.Rankings = await data.get_rankings(ctx, event_code, verbose=False) # Can be null
+
+    if not rankings:
+        await ctx.send(f"Event {event_code} not found.")
+        return
+    
+    max_page = math.ceil(len(rankings.rankings) / 10)
+    if page_num > max_page or page_num <= 0:
+        await ctx.send("Invalid page number.")
+        return
+
+    rankings_str: str = "# - Team — W-T-L — RS - PTS-QA-DQ—MP-MC\n"
+    # rank - team num — w-t-l — rankingscore avgpoints qualavg dq — matchesplayed matchescounted
+    
+    for i in range(max(0, page_num * 10 - 10), min(len(rankings.rankings), page_num * 10)):
+        ranking: util.Ranking = rankings.rankings[i]
+        if len(rankings_str) >= 900: # discord has a 1024 char limit on embeds
+            rankings_str += "...\n"
+            break
+        rankings_str += f"{ranking.rank} - **{ranking.team_number}** — {ranking.wins}-{ranking.ties}-{ranking.losses} —"\
+            + f" {ranking.ranking_score} - {ranking.avg_points_np} - {ranking.qual_avg} - {ranking.dq} — "\
+            + f"{ranking.matches_played} - {ranking.matches_counted}" + "\n"
+    rankings_str = rankings_str[:-1]
+
+    embed = util.Embed(
+        title=f"Event {event_code} Rankings",
+        description=f"Event Rankings"
+    )
+
+    embed.add_field(name=f"Event Rankings ({page_num}/{max_page})", value=rankings_str)
+    await embed.send(ctx)
 
 @bot.hybrid_command(name="graduate", description="Mark yourself as an alumni")
 async def graduate(ctx: commands.Context):
@@ -300,7 +432,7 @@ async def unhungry(ctx: commands.Context):
     await ctx.send("You are no longer hungry! You can add this role back with `!im_hungry`.")
 
 @bot.hybrid_command(name="sync_leagues", description="Add people with existing team roles to their league roles", hidden=True)
-@commands.is_owner()
+@commands.has_role("Mod")
 async def sync_leagues(ctx: commands.Context):
     '''
     Add people with existing team roles to their league roles. This is useful if the bot was added to a server
@@ -327,8 +459,10 @@ async def sync_leagues(ctx: commands.Context):
                         print(f"Failed to add {member.display_name} to {league_role.name} for being on team {role.name}.")
     await message.edit(content=f"Synced leagues successfully! Added {count} member(s) to their league roles.")
 
+# region Mod Commands
+
 @bot.hybrid_command(name="add_role", description="Add a role to a user", hidden=True)
-@commands.is_owner()
+@commands.has_role("Mod")
 async def add_role(ctx: commands.Context, user: discord.Member, role_name: str):
     '''
     Add a role to a user. This is useful for adding roles to users who are not on a team.
@@ -348,7 +482,7 @@ async def add_role(ctx: commands.Context, user: discord.Member, role_name: str):
         await ctx.send(f"Failed to add {role.name} to {user.display_name}. I don't have permission to do that.")
 
 @bot.hybrid_command(name="sync", description="Force data sync", hidden=True)
-@commands.is_owner()
+@commands.has_role("Mod")
 async def force_sync(ctx: commands.Context):
     try:
         message = await ctx.send("Fetching data...")
@@ -359,7 +493,7 @@ async def force_sync(ctx: commands.Context):
 
 
 @bot.hybrid_command(name="sync_commands", description="Sync slash commands", hidden=True)
-@commands.is_owner()
+@commands.has_role("Mod")
 async def sync(ctx: commands.Context):
     try:
         synced = await bot.tree.sync()
@@ -367,6 +501,7 @@ async def sync(ctx: commands.Context):
     except Exception as e:
         await ctx.send(f"Failed to sync commands: {e}")
 
+# endregion
 
 if __name__ == "__main__":
     load_dotenv(".env") # Load environment variables from .env file

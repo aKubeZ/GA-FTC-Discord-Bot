@@ -20,6 +20,27 @@ async def get_team(ctx: commands.Context, team_number: str, verbose: bool = True
 
     return None
 
+async def get_event(ctx: commands.Context, event_code: str, verbose: bool = True) -> util.Team | None:
+    '''Returns the event info for the given event code from the cache. Returns None if not found.'''
+    
+    for event in cache.events:
+        if event.code == event_code:
+            return event
+
+    return None
+
+async def get_season(ctx: commands.Context, year: str, verbose: bool = True) -> util.Season | None:
+    '''Returns the season info for a given year from the cache. Returns None if not found.'''
+    if not await util.is_valid_year(ctx, year, verbose=verbose):
+        return None
+    
+    return cache.seasons.get(year)
+
+async def get_rankings(ctx: commands.Context, event_code: str, verbose: bool = True) -> util.Rankings | None:
+    '''Returns the rankings of an event'''
+    
+    return cache.rankings.get(event_code)
+
 def get_teams_in_league(league_id: str) -> list[util.Team]:
     '''Returns a list of teams in the given league ID from the cache'''
     teams_in_league: list[util.Team] = []
@@ -58,10 +79,27 @@ def sync_cache() -> None:
                 for team in teams:
                     if team["teamNumber"] == league_team:
                         team["league"] = league_id
+        
+        seasons: dict = {}
+
+        for year in util.SEASONS:
+            season: dict = api.get_season(year)
+            if season:
+                del season['fRCChampionships'] 
+            seasons[year] = season
+
+        events: list[dict] = api.get_events()
+
+        rankings: dict = {}
+        for event in events:
+            rankings[event.get("code")] = api.get_rankings(event.get("code"))
 
         cache_data = {
             "teams": teams,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "seasons": seasons,
+            "events": events,
+            "rankings": rankings
         }
 
         json.dump(cache_data, f, indent=4)
