@@ -1,7 +1,5 @@
 import math
-
-from sympy import *
-from sympy.vector import CoordSys3D
+import random
 
 import discord
 from discord.ext import commands
@@ -9,9 +7,12 @@ from dotenv import load_dotenv
 import os
 import re
 
+import numpy
+
 import api
 import data
 import util
+import calculator
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -437,61 +438,79 @@ async def unhungry(ctx: commands.Context):
 
 # region Calculator Stuff
 
-calcVars: dict = {}
+calc_vars: dict = {}
+def format_input(input):
+    if input[0] == '`' and input[-1] == '`':
+        return input[1:-1]
+    else:
+        return input
 
-@bot.hybrid_command(name="calc", description="Sympy computer algebra system / calculator")
+def format_output(output):
+    if abs(output) <= 0.000000000000001: return "0"
+    if numpy.iscomplex(output):
+        if abs(output.real) <= 0.000000000000001:
+            if abs(output.imag) <= 0.000000000000001: return "0"
+            if output.imag == 1: return "i"
+            if output.imag == -1: return "-i"
+            return f"{format_output(output.imag)}i"
+        elif abs(output.imag) <= 0.000000000000001:
+            return format_output(output.real)
+        else:
+            return f"{format_output(output.real)} {"+" if output.imag >= 0 else "-"} {"" if abs(output.imag) == 1 else format_output(abs(output.imag))}i"
+    output = str(output)
+    output = re.sub(r'e\+?(-?[0-9]+)', r'×10^(\1)', output)
+    output = re.sub(r'-0([0-9])', r'-\1', output)
+    if output[-2:] == '.0': output = output[:-2]
+    return output
+
+@bot.hybrid_command(name="calc", description="Basic Calculator")
 async def calc(ctx: commands.Context, *, input: str):
-    '''Simplifies expressions. Note that ^ is xor and ** is pow.'''
-    try:
-        if re.match('eval|exec', input):
-            await ctx.send("What are you doing.")
-            return
-        out: str = str(parse_expr(input.format(**calcVars)))
-    except Exception as e:
-        print("ERROR: ", type(e), e)
-        await ctx.send("Couldn't evaluate.")
+    out = calculator.calculate(format_input(input), calc_vars)
+    if out == calculator.syntax_error:
+        await ctx.send("Syntax Error.")
         return
-    await ctx.send(f"```\n{out}\n```")
+    if out == calculator.math_error:
+        await ctx.send("Math Error.")
+        return
+    await ctx.send(f"```\n{format_output(out)}\n```")
 
-@bot.hybrid_command(name="calca", description="Assigns values to the calculator memory")
+@bot.hybrid_command(name="calca", description="Assigns Values to the Calculator Memory")
 async def calca(ctx: commands.Context, var: str, *, input: str):
-    '''Puts values/expressions to the calculator memory, retrievable via "{identifier}. Note that ^ is xor and ** is pow."'''
-    try:
-        if re.match('eval|exec', input):
-            await ctx.send("What are you doing.")
-            return
-        out: str = str(parse_expr(input.format(**calcVars)))
-        calcVars[var] = out
-    except:
-        await ctx.send("Couldn't evaluate.")
+    out = calculator.calculate(format_input(input), calc_vars)
+    if out == calculator.syntax_error:
+        await ctx.send("Syntax Error.")
         return
-    await ctx.send(f"```\n{var} ← {out}\n```")
-
-@bot.hybrid_command(name="calcf", description="Evaluates expression numerically")
-async def calcf(ctx: commands.Context, *, input: str):
-    '''Evaluates the expression numerically. Note that ^ is xor and ** is pow.'''
-    try:
-        if re.match('eval|exec', input):
-            await ctx.send("What are you doing.")
-            return
-        out: str = str(parse_expr(input.format(**calcVars)).evalf())
-    except:
-        await ctx.send("Couldn't evaluate.")
+    if out == calculator.math_error:
+        await ctx.send("Math Error.")
         return
-    await ctx.send(f"```\n{out}\n```")
+    calc_vars[var] = out
+    await ctx.send(f"```\n{var} ← {format_output(out)}\n```")
 
-@bot.hybrid_command(name="calcm", description="Prints calculator memory")
+@bot.hybrid_command(name="calcm", description="Sends Calculator Memory")
 async def calcm(ctx: commands.Context):
-    '''Prints calculator memory'''
-    await ctx.send(f"```\n{calcVars}\n```")
+    memory_string = ""
+    if calc_vars == {}:
+        await ctx.send("Nothing in memory.")
+        return
+    for variable, value in calc_vars.items():
+        memory_string += f"{variable}: {format_output(value)}\n"
+    if len(memory_string) >= 2000:
+        await ctx.send("Too many variables to display! Clear it please")
+        return
+    await ctx.send(f"```\n{memory_string}```")
 
-@bot.hybrid_command(name="calcmc", description="Clears calculator memory")
+@bot.hybrid_command(name="calcmc", description="Clears Calculator Memory")
 async def calcmc(ctx: commands.Context):
-    '''Clears calculator memory'''
-    calcVars.clear()
-    await ctx.send("Calcalator memory cleared.")
+    calc_vars.clear()
+    await ctx.send("Calculator Memory Cleared.")
 
 # endregion
+
+answers: list[str] = ["yes definitely", "no dont pls dont", "what does that even mean??? ask chatgpt or something", "timmy says yes", "say that again i couldn't hear", "YES", "NO", "hell yeah", "ah hell no", "no.", "67"]
+@bot.hybrid_command(name="tim", description="Ask me a yes or no question")
+async def tim(ctx: commands.Context):
+    '''Respond with a variant of yes or no.'''
+    await ctx.send(answers[random.randrange(len(answers))])
 
 @bot.hybrid_command(name="echo", description="Repeats arguments")
 async def echo(ctx: commands.Context, *, text: str):
