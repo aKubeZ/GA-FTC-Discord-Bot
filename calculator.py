@@ -1,3 +1,4 @@
+import math
 import re
 import cmath
 import numbers
@@ -18,6 +19,9 @@ def flatten_list(args):
 def conj(num):
     if isinstance(num, numbers.Real): return num
     return num.real - 1j * num.imag
+
+def zero_one(dim, comp):
+    return Vector(*[1 if i == comp else 0 for i in range(1, dim + 1)])
 
 class Vector:
     components = []
@@ -220,6 +224,42 @@ class Matrix:
             transpose_vectors.append(Vector(*[conj(self.get(j, i)) for i in range(1, self.m + 1)]))
         return Matrix(*transpose_vectors)
 
+    def rref(self):
+        rref = self
+        pivot_row = 1
+        # finish
+        for j in range(1, rref.n + 1):
+            if pivot_row > rref.m: break
+            pivot_found = False
+            if rref.get(pivot_row, j) != 0: pivot_found = True
+            else:
+                # find non zero in the column > pivot_row
+                new_pivot_row = pivot_row + 1
+                while new_pivot_row <= rref.m:
+                    if rref.get(new_pivot_row, j) != 0:
+                        pivot_found = True
+                        # swap rows
+                        # i know this permutation matrix defn is long but no one has to see it
+                        perm_mat = Matrix(*[zero_one(rref.m, new_pivot_row if j == pivot_row else pivot_row if j == new_pivot_row else j) for j in range(1, rref.m + 1)])
+                        rref = perm_mat.mult(rref)
+                        break
+                    new_pivot_row += 1
+            if not pivot_found:
+                # pivot_row += 1
+                continue
+            elim_vec_components = []
+            pivot = rref.get(pivot_row, j)
+            for i in range(1, rref.m + 1):
+                elim_vec_components.append((1 if i == pivot_row else -rref.get(i, j)) / pivot)
+            elim_vector = Vector(*elim_vec_components)
+            # print(str(elim_vector))
+            # elim_vector = rref.basis(j).div(pivot)
+            # print(*[1 if i == 2 else 0 for i in range(1, self.m)])
+            elim_mat = Matrix(*[elim_vector if elim_j == pivot_row else zero_one(rref.m, elim_j) for elim_j in range(1, rref.m + 1)])
+            rref = elim_mat.mult(rref)
+            pivot_row += 1
+        return rref
+
     def row(self, i):
         return Matrix(*[self.get(i, j) for j in range(1, self.n + 1)])
 
@@ -251,6 +291,11 @@ def semicolon(*args):
         else:
             matrices.append(Matrix(arg))
     return Matrix(*matrices)
+def arg(z):
+    if abs(z) == 0: return 0
+    phi = (cmath.log(z / abs(z)) / 1j).real
+    if phi < 0: phi += 2 * math.pi
+    return phi
 
 syntax_error = '6767mangomangomustardd'
 math_error = 'whatthehellysabcdefiefhei'
@@ -277,7 +322,7 @@ operators = {
     '%': {'type': in_operator, 'rank': 1, 'func': lambda a, b: a % b},
     '^': {'type': in_operator, 'rank': 2, 'func': lambda a, b: power(a, b)},
     # basic funcs
-    '!': {'type': post_operator, 'func': lambda a: cmath.gamma(1 + a)},
+    '!': {'type': post_operator, 'func': lambda a: math.gamma(1 + a)},
     'ln': {'type': pre_operator, 'func': lambda a: cmath.log(a)},
     'logb': {'type': pre_operator, 'func': lambda a: cmath.log2(a)},
     'log': {'type': pre_operator, 'func': lambda a: cmath.log10(a)},
@@ -287,6 +332,7 @@ operators = {
     'sign': {'type': pre_operator, 'func': lambda a: a / abs(a)},
     'sgn': {'type': pre_operator, 'func': lambda a: a / abs(a)},
     'abs': {'type': pre_operator, 'func': lambda a: abs(a)},
+    'arg': {'type': pre_operator, 'func': lambda a: arg(a)},
     'conj': {'type': pre_operator, 'func': lambda a: conj(a)},
     'hyp': {'type': pre_operator, 'func': lambda *args: cmath.sqrt(sum([arg*conj(arg) for arg in args])), 'list_op': True},
     # matrices + vectors
@@ -296,6 +342,7 @@ operators = {
     'det': {'type': pre_operator, 'func': lambda a: a.det()},
     'trace': {'type': pre_operator, 'func': lambda a: a.trace()},
     'tr': {'type': pre_operator, 'func': lambda a: a.trace()},
+    'rref': {'type': pre_operator, 'func': lambda a: a.rref()},
     'T': {'type': pre_operator, 'func': lambda a: a.transpose()},
     'transpose': {'type': pre_operator, 'func': lambda a: a.transpose()},
     '&': {'type': in_operator, 'rank': 1, 'func': lambda a, b: a.cross(b)},
@@ -377,7 +424,7 @@ def parse(input):
     if (isnum(input)): return tonum(input)
     nest_count = 0
     potential_operators = []
-    for i, char in enumerate(input):
+    for i, char in enumerate(input): # inoperator parser
         if char in openers: nest_count += 1
         elif char in closers: nest_count -= 1
         prev_char = input[i - 1] if i >= 1 else ''
@@ -417,7 +464,7 @@ def parse(input):
     if nest_count != 0:
         print('error b')
         return syntax_error
-    if potential_operators == []:
+    if potential_operators == []: # other operators parser (only if there are no inoperators)
         if input[0] == '(' and input[-1] == ')':
             return parse(input[1:-1])
         elif input[0] == '-':
@@ -429,35 +476,56 @@ def parse(input):
             match = re.findall(r'!$', input)
             post_match = match[0] if len(match) >= 1 else None
             if post_match:
-                for operator_name, operator in operators.items():
-                    if operator_name == '': continue
-                    if operator['type'] == post_operator and post_match == operator_name:
-                        return {
-                            'operator': operator,
-                            'args': [parse(input[:-len(operator_name)])]
-                        }
-            if pre_match:
-                for operator_name, operator in operators.items():
-                    if operator_name == '': continue
-                    if operator['type'] == pre_operator and pre_match == operator_name:
-                        return {
-                            'operator': operator,
-                            'args': [parse(input[len(operator_name):])]
-                        }
-            for operator_name, operator in operators.items():
-                if operator_name == '': continue
-                # print(operator_name, input[0], input[-1])
-                if operator['type'] == bracket_operator and input[0] == operator_name[0] and input[-1] == operator_name[-1]:
+                operator = operators.get(post_match)
+                print(operator)
+                if operator and operator['type'] == post_operator:
                     return {
                         'operator': operator,
-                        'args': [parse(input[1:-1])]
+                        'args': [parse(input[:-len(post_match)])]
                     }
+                # for operator_name, operator in operators.items():
+                #     if operator_name == '': continue
+                #     if operator['type'] == post_operator and post_match == operator_name:
+                #         return {
+                #             'operator': operator,
+                #             'args': [parse(input[:-len(operator_name)])]
+                #         }
+            if pre_match:
+                operator = operators.get(pre_match)
+                if operator and operator['type'] == pre_operator:
+                    return {
+                        'operator': operator,
+                        'args': [parse(input[len(pre_match):])]
+                    }
+            #     for operator_name, operator in operators.items():
+            #         if operator_name == '': continue
+            #         if operator['type'] == pre_operator and pre_match == operator_name:
+            #             return {
+            #                 'operator': operator,
+            #                 'args': [parse(input[len(operator_name):])]
+            #             }
+
+            bracket_match = input[0] + " " + input[-1]
+            operator = operators.get(bracket_match)
+            if operator:
+                return {
+                    'operator': operator,
+                    'args': [parse(input[1:-1])]
+                }
+            # for operator_name, operator in operators.items():
+            #     if operator_name == '': continue
+            #     # print(operator_name, input[0], input[-1])
+            #     if operator['type'] == bracket_operator and input[0] == operator_name[0] and input[-1] == operator_name[-1]:
+            #         return {
+            #             'operator': operator,
+            #             'args': [parse(input[1:-1])]
+            #         }
 
             print('error c')
             return syntax_error
     
     operator = potential_operators[0]
-    for index, char in potential_operators:
+    for index, char in potential_operators: # selects best operator via pemdas
         if operators[char]['rank'] <= operators[operator[1]]['rank']:
             operator = (index, char)
 

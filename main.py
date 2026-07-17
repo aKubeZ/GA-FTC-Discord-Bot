@@ -515,7 +515,7 @@ def format_output(output, precision=10, matrix_precision=2, left_indent=0, compa
 @bot.hybrid_command(name="calc", description="""
                     Basic calculator that supports:
                     +, -, *, /, % (mod), ^, !, ln, exp, sqrt, cbrt, sign, sgn, abs, conj, hyp,
-                    eye, zeros, ones, det, trace, tr, T, transpose, & (cross product),
+                    eye, zeros, ones, det, trace, tr, rref, T, transpose, & (cross product),
                     literally every trig func + hyperbolic trig func,
                     And constants e and pi.
                     To define a (column) vector:
@@ -587,7 +587,6 @@ async def say(ctx: commands.Context, *, input: str):
     '''Responds with wtv, !sayclear if i went rogue'''
     await feed_and_say(input, ctx.message)
 
-import markov
 @bot.hybrid_command(name="sayclear", description="Reset my memory")
 async def sayclear(ctx: commands.Context):
     '''use if !say spits out some vile stuff'''
