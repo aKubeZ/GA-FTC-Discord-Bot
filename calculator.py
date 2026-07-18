@@ -20,6 +20,35 @@ def conj(num):
     if isinstance(num, numbers.Real): return num
     return num.real - 1j * num.imag
 
+def real(num):
+    # pass
+    if isinstance(num, numbers.Complex):
+        return num.real
+    else: return num
+
+def imag(num):
+    # pass
+    if isinstance(num, numbers.Complex):
+        return num.imag
+    else: return 0
+
+def floor(num):
+    if isinstance(num, numbers.Complex):
+        return math.floor(num.real) + 1j * math.floor(num.imag)
+    else: return math.floor(num)
+
+def ceil(num):
+    if isinstance(num, numbers.Complex):
+        return math.ceil(num.real) + 1j * math.ceil(num.imag)
+    else: return math.ceil(num)
+
+def calc_round(num):
+    if isinstance(num, numbers.Complex):
+        return round(num.real) + 1j * round(num.imag)
+    else: return round(num)
+
+# Vectors + Matrices
+
 def zero_one(dim, comp):
     return Vector(*[1 if i == comp else 0 for i in range(1, dim + 1)])
 
@@ -65,18 +94,24 @@ class Vector:
         return cmath.sqrt(sum([component * conj(component) for component in self.components]))
 
 def eye(n):
+    n = real(n)
+    if n > 40: return math_error
     vectors = []
     for j in range(1, int(n) + 1):
         vectors.append(Vector(*[1 if i == j else 0 for i in range(1, int(n) + 1)]))
     return Matrix(*vectors)
 
 def zeros(n):
+    n = real(n)
+    if n > 40: return math_error
     vectors = []
     for j in range(1, int(n) + 1):
         vectors.append(Vector(*[0 for i in range(1, int(n) + 1)]))
     return Matrix(*vectors)
 
 def ones(n):
+    n = real(n)
+    if n > 40: return math_error
     vectors = []
     for j in range(1, int(n) + 1):
         vectors.append(Vector(*[1 for i in range(1, int(n) + 1)]))
@@ -296,6 +331,11 @@ def arg(z):
     phi = (cmath.log(z / abs(z)) / 1j).real
     if phi < 0: phi += 2 * math.pi
     return phi
+def factorial(x):
+    if x == x.real:
+        return math.gamma(x.real + 1)
+    else:
+        raise Exception("unfortunately gamma function (and consequently factorials) don't support complex numbers")
 
 syntax_error = '6767mangomangomustardd'
 math_error = 'whatthehellysabcdefiefhei'
@@ -305,6 +345,7 @@ post_operator = 2 # where the operator is after its argument, eg. x!
 in_operator = 3 # where the operator is in between its 2 arguments, eg. x + y
 bracket_operator = 4 # where the operator surrounds its argument, eg. <x, y>
 blank_operator = 5 # where the operator just doesnt exist, eg. xy
+custom_operator = 6 # where the operator is custom made, eg. f(x), g(x, y, z)
 # note that pre operators are evaluated first, so sin2! == (sin 2)!
 
 openers = ['(', '[', '<']
@@ -322,7 +363,7 @@ operators = {
     '%': {'type': in_operator, 'rank': 1, 'func': lambda a, b: a % b},
     '^': {'type': in_operator, 'rank': 2, 'func': lambda a, b: power(a, b)},
     # basic funcs
-    '!': {'type': post_operator, 'func': lambda a: math.gamma(1 + a)},
+    '!': {'type': post_operator, 'func': lambda a: factorial(a)},
     'ln': {'type': pre_operator, 'func': lambda a: cmath.log(a)},
     'logb': {'type': pre_operator, 'func': lambda a: cmath.log2(a)},
     'log': {'type': pre_operator, 'func': lambda a: cmath.log10(a)},
@@ -335,6 +376,11 @@ operators = {
     'arg': {'type': pre_operator, 'func': lambda a: arg(a)},
     'conj': {'type': pre_operator, 'func': lambda a: conj(a)},
     'hyp': {'type': pre_operator, 'func': lambda *args: cmath.sqrt(sum([arg*conj(arg) for arg in args])), 'list_op': True},
+    'real': {'type': pre_operator, 'func': lambda a: real(a)},
+    'imag': {'type': pre_operator, 'func': lambda a: imag(a)},
+    'floor': {'type': pre_operator, 'func': lambda a: floor(a)},
+    'ceil': {'type': pre_operator, 'func': lambda a: ceil(a)},
+    'round': {'type': pre_operator, 'func': lambda a: calc_round(a)},
     # matrices + vectors
     'eye': {'type': pre_operator, 'func': lambda a: eye(a)},
     'zeros': {'type': pre_operator, 'func': lambda a: zeros(a)},
@@ -346,6 +392,7 @@ operators = {
     'T': {'type': pre_operator, 'func': lambda a: a.transpose()},
     'transpose': {'type': pre_operator, 'func': lambda a: a.transpose()},
     '&': {'type': in_operator, 'rank': 1, 'func': lambda a, b: a.cross(b)},
+    'norm': {'type': pre_operator, 'func': lambda a: a.norm()},
     '< >': {'type': bracket_operator, 'func': lambda *args: Vector(*args), 'list_op': True},
     '[ ]': {'type': bracket_operator, 'func': lambda *args: Matrix(*args), 'list_op': True},
     ';': {'type': in_operator, 'rank': -2, 'func': lambda *args: semicolon(*args)}, # not included in list op bc umm it kinda needs them
@@ -394,7 +441,8 @@ constants = {
     'i': 'j'
 }
 
-def isnum(string):
+def isnum(string, vars=[]):
+    if string in vars: return True
     string = str.lower(string)
     if string == '': return False
     if string[0] == '-': string = string[1:]
@@ -406,7 +454,8 @@ def isnum(string):
     if len(match) > 3: return False
     return str.isdecimal(match[0]) and (len(match) == 2 or str.isdecimal(match[1]))
 
-def tonum(string): # note that there are no operators in ts
+def tonum(string, vars=[]): # note that there are no operators in ts
+    if string in vars: return string
     if string == 'j':
         return 1j
     if string == '-j':
@@ -416,12 +465,20 @@ def tonum(string): # note that there are no operators in ts
     else:
         return float(string)
 
-def parse(input):
-    # print(input)
+def parse(input, args=[], funcs={}):
+    '''
+    funcs: {
+        'f': {
+            'func': lambda *args: <smth(args)>
+        }, 'g': etc.
+    }
+    args is used when defining a function
+    '''
+    # print(f"\'{input}'")
     if input == '':
         print('error a')
         return syntax_error
-    if (isnum(input)): return tonum(input)
+    if (isnum(input, vars=args)): return tonum(input, vars=args)
     nest_count = 0
     potential_operators = []
     for i, char in enumerate(input): # inoperator parser
@@ -432,13 +489,20 @@ def parse(input):
             if char == '-':
                 if i == 0: continue # prevents the '-' in '-3' from becoming an oeprator
                 if not (isnum(prev_char) or prev_char == '.' or prev_char in closers): continue # makes sometrhing like (2)-3 become operator
+                continue_from_func = False
+                for arg in args:
+                    if i < len(arg): continue
+                    if input[i - len(arg):i] == arg:
+                        continue_from_func = True
+                        break
+                if continue_from_func: continue
             potential_operators.append((i, char))
         elif nest_count == 0 and char in closers and i < len(input) - 1 and input[i + 1] not in operators: # checks for things like (3)2
             potential_operators.append((i + 1, ''))
         elif nest_count == 1 and i >= 1 and char in openers: # checks for things olike 2(3)
             paren_mult = True
-            for operator_name, operator in operators.items():
-                if operator['type'] != pre_operator and operator['type'] != in_operator: continue
+            for operator_name, operator in {**operators, **funcs}.items():
+                if operator['type'] != pre_operator and operator['type'] != in_operator and operator['type'] != custom_operator: continue
                 if len(operator_name) > i + 1: continue
                 if input[i - len(operator_name):i] == operator_name:
                     paren_mult = False
@@ -446,42 +510,58 @@ def parse(input):
             # print(paren_mult)
             if paren_mult:
                 potential_operators.append((i, ''))
-        elif nest_count == 0 and i >= 1 and i < len(input) - 1:
-            paren_mult = True
-            for operator_name, operator in operators.items():
-                if operator['type'] != in_operator: continue
-                if len(operator_name) > i: continue
-                if input[i - len(operator_name):i] == operator_name:
-                    paren_mult = False
-            if paren_mult == True:
-                for operator_name, operator in operators.items():
-                    if operator['type'] != pre_operator: continue
-                    if len(operator_name) >= len(input) - i: continue
-                    if input[i:i + len(operator_name)] == operator_name:
-                        potential_operators.append((i, ''))
-                        break
+        elif nest_count == 0 and i >= 1: # and i < len(input) - 1
+            left_allows = False
+            if isnum(prev_char) or prev_char == '.' or prev_char in closers:
+                left_allows = True
+            if not left_allows: continue
+            # paren_mult = True
+            # for operator_name, operator in operators.items():
+            #     if operator['type'] != in_operator: continue
+            #     if len(operator_name) > i: continue
+            #     if input[i - len(operator_name):i] == operator_name:
+            #         paren_mult = False
+            # if paren_mult == True:
+            for operator_name, operator in {**operators, **funcs}.items():
+                if operator['type'] != pre_operator and operator['type'] != custom_operator: continue
+                if len(operator_name) >= len(input) - i: continue
+                if input[i:i + len(operator_name)] == operator_name:
+                    potential_operators.append((i, ''))
+                    break
+            # if paren_mult:
+
+            # right_allows = False
+                             #    "23var" len(input) = 5; i = 2; len(arg) = 3
+            for arg in args: #       i
+                if len(arg) > len(input) - i: continue
+                if input[i:i + len(arg)] == arg:
+                    # right_allows = True
+                    potential_operators.append((i, ''))
+                    break
 
     if nest_count != 0:
         print('error b')
         return syntax_error
     if potential_operators == []: # other operators parser (only if there are no inoperators)
         if input[0] == '(' and input[-1] == ')':
-            return parse(input[1:-1])
+            return parse(input[1:-1], funcs=funcs, args=args)
         elif input[0] == '-':
             # print(input)
-            return parse(f'-1*({input[1:]})')
+            return parse(f'-1*({input[1:]})', funcs=funcs, args=args)
         else:
             match = re.findall(r'^[a-zA-Z]+', input)
             pre_match = match[0] if len(match) >= 1 else None
-            match = re.findall(r'!$', input)
+            match = re.findall(r'!$', input) # needs to be updated when more postoperators get added although i doubt thatll happen
+            # like what other post_operators even are there
+            # oh wait i forgot about prime notation
+            # how do i implement prime notation
             post_match = match[0] if len(match) >= 1 else None
             if post_match:
                 operator = operators.get(post_match)
-                print(operator)
                 if operator and operator['type'] == post_operator:
                     return {
                         'operator': operator,
-                        'args': [parse(input[:-len(post_match)])]
+                        'args': [parse(input[:-len(post_match)], funcs=funcs, args=args)]
                     }
                 # for operator_name, operator in operators.items():
                 #     if operator_name == '': continue
@@ -491,11 +571,17 @@ def parse(input):
                 #             'args': [parse(input[:-len(operator_name)])]
                 #         }
             if pre_match:
+                function = funcs.get(pre_match)
+                if function:
+                    return {
+                        'operator': function,
+                        'args': [parse(input[len(pre_match):], funcs=funcs, args=args)]
+                    }
                 operator = operators.get(pre_match)
                 if operator and operator['type'] == pre_operator:
                     return {
                         'operator': operator,
-                        'args': [parse(input[len(pre_match):])]
+                        'args': [parse(input[len(pre_match):], funcs=funcs, args=args)]
                     }
             #     for operator_name, operator in operators.items():
             #         if operator_name == '': continue
@@ -510,7 +596,7 @@ def parse(input):
             if operator:
                 return {
                     'operator': operator,
-                    'args': [parse(input[1:-1])]
+                    'args': [parse(input[1:-1], funcs=funcs, args=args)]
                 }
             # for operator_name, operator in operators.items():
             #     if operator_name == '': continue
@@ -531,7 +617,7 @@ def parse(input):
 
     return {
         'operator': operators[operator[1]],
-        'args': [parse(input[:operator[0]]), parse(input[operator[0] + len(operator[1]):])],
+        'args': [parse(input[:operator[0]], args=args, funcs=funcs), parse(input[operator[0] + len(operator[1]):], args=args, funcs=funcs)],
     }
 
 def replace_vars(input, vars):
@@ -541,7 +627,10 @@ def replace_vars(input, vars):
         input = re.sub(r'(?<![a-zA-Z_])' + name + r'(?![a-zA-Z_])', f'({value})', input)
     return input
 
-def evaluate(expression):
+def evaluate(expression, args={}):
+    if isinstance(expression, str):
+        if expression in args: return args[expression]
+        else: return syntax_error
     if expression == syntax_error: return syntax_error
     if expression == math_error: return math_error
     if isinstance(expression, numbers.Number): return expression
@@ -549,28 +638,66 @@ def evaluate(expression):
     operator_type = operator['type']
     operator_func = operator['func']
     arguments = []
+    # if expression_argument in args:
+    #     return args[expression_argument]
     for expression_argument in expression['args']:
-        argument = evaluate(expression_argument)
+        argument = evaluate(expression_argument, args=args)
         if argument == syntax_error: return syntax_error
         arguments.append(argument)
     for operator_name, list_operator in operators.items():
         if not list_operator.get('list_op'): continue
         if list_operator != operator: continue
         arguments = flatten_list(arguments)
-    # if operator == operators[',']:
-    #     arguments = flatten_list(arguments)
-    # elif operator == operators[';']:
-    #     for i, arg in enumerate(arguments):
-    #         arguments[i] = flatten_list(arg)
 
     try:
         return operator_func(*arguments)
     except Exception as e:
         print(e)
         return math_error
-    
-def calculate(input, vars):
+
+    # return operator_func(*arguments)
+
+def sub_args(args, arg_values):
+    out_dict = {}
+    for i, arg in enumerate(args):
+        out_dict = {**out_dict, arg: arg_values[i]}
+    return out_dict
+
+def has_syntax_error(obj):
+    if obj == syntax_error: return True
+    if isinstance(obj, list) or isinstance(obj, tuple):
+        for element in obj:
+            if has_syntax_error(element): return True
+    elif isinstance(obj, dict):
+        for element in obj.values():
+            if has_syntax_error(element): return True
+    return False
+
+def def_func(definition, args, vars={}, funcs={}):
+    definition = re.sub(r'\s', '', replace_vars(definition, vars))
+    expression = parse(definition, args=args, funcs=funcs)
+    # converts [a, b] to {'x': a, 'y': b} for args of ['x', 'y']
+    print(expression)
+    if has_syntax_error(expression): return syntax_error
+    return {
+        'type': custom_operator,
+        'func': lambda *arg_values: evaluate(expression, args=sub_args(args, flatten_list(arg_values)))
+    }
+
+def calculate(input, vars={}, funcs={}):
     input = re.sub(r'\s', '', replace_vars(input, vars))
+    print(input)
     # print(input)
-    expression = parse(input)
+    expression = parse(input, funcs=funcs)
     return evaluate(expression)
+
+# asdf = def_func('2x', ['x'])
+# print(asdf)
+
+# functions = {
+#     'f': asdf,
+#     'g': {
+#         'type': custom_operator,
+#         'func': lambda x: x ** 2
+#     }
+# }

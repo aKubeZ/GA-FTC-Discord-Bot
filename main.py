@@ -328,8 +328,8 @@ async def event(ctx: commands.Context, event_code: str):
     embed.add_field(name="Start Date", value=event.date_start)
     embed.add_field(name="End Date", value=event.date_end)
     await embed.send(ctx)
-
 @bot.hybrid_command(name="events", description="Lists event codes")
+
 async def events(ctx: commands.Context):
     '''
     Lists event codes
@@ -448,6 +448,7 @@ async def unhungry(ctx: commands.Context):
 # region Calculator Stuff
 
 calc_vars: dict = {}
+calc_funcs: dict = {}
 def format_input(input):
     if input[0] == '`' and input[-1] == '`':
         return input[1:-1]
@@ -514,19 +515,21 @@ def format_output(output, precision=10, matrix_precision=2, left_indent=0, compa
 
 @bot.hybrid_command(name="calc", description="""
                     Basic calculator that supports:
-                    +, -, *, /, % (mod), ^, !, ln, exp, sqrt, cbrt, sign, sgn, abs, conj, hyp,
-                    eye, zeros, ones, det, trace, tr, rref, T, transpose, & (cross product),
+                    +, -, *, /, % (mod), ^, !, ln, exp, sqrt, cbrt, sign, sgn, abs, arg, conj, hyp,
+                    eye, zeros, ones, det, trace, tr, rref, T, transpose, & (cross product), norm,
                     literally every trig func + hyperbolic trig func,
-                    And constants e and pi.
-                    To define a (column) vector:
+                    And constants e and pi and i=sqrt(-1).
+                    To define a column vector:
                         <1, 2, 3>
+                    To define a row vector (if u fw ts):
+                        [1, 2, 3]
                     To define a matrix:
                         Per row: [1, 2, 3; 4, 5, 6; 7, 8, 9]
                         Per column: [<1, 2, 3>, <4, 5, 6>, <7, 8, 9>]
                     """)
 async def calc(ctx: commands.Context, *, input: str):
     '''Basic calculator.'''
-    out = calculator.calculate(format_input(input), calc_vars)
+    out = calculator.calculate(format_input(input), vars=calc_vars, funcs=calc_funcs)
     if out == calculator.syntax_error:
         await ctx.send("Syntax Error.")
         return
@@ -535,14 +538,49 @@ async def calc(ctx: commands.Context, *, input: str):
         return
     await ctx.send(f"```\n{format_output(out)}\n```")
 
+@bot.hybrid_command(name="calcf", description="""
+                    Assigns functions to the calculator memory. Check !help calc for more info about the calculator
+                    Try !calca f(x, y) x + y
+                    and !calc f(2, 3)
+                    """)
+async def calcf(ctx: commands.Context, *, input: str):
+    '''Assigns functions to the calculator memory'''
+    func_names = re.findall(r'^.*?(?=\()', input)
+    if len(func_names) == 0:
+        await ctx.send("Couldn't find function name.")
+        return
+    args_match = re.findall(r'(?<=\().*?(?=\))', input)
+    if len(args_match) == 0 or args_match[0] == '':
+        await ctx.send("Couldn't find function arguments.")
+        return
+    func_expressions = re.findall(r'(?<=\) ).*', input)
+    if len(func_expressions) == 0:
+        await ctx.send("Couldn't find function expression.")
+        return
+    func_name = func_names[0]
+    func_args = re.sub(r'\s', '', args_match[0]).split(',')
+    func_expression = format_input(func_expressions[0])
+    parsed_func = calculator.def_func(func_expression, func_args, vars=calc_vars, funcs=calc_funcs)
+    if parsed_func == calculator.syntax_error:
+        await ctx.send("Syntax Error.")
+        return
+    if parsed_func == calculator.math_error:
+        await ctx.send("Math Error.")
+        return
+    func_str = f"{func_name}({", ".join(func_args)})"
+    calc_funcs[func_name] = parsed_func
+    calc_funcs[func_name]['defstr'] = func_str
+    calc_funcs[func_name]['exprstr'] = func_expression
+    await ctx.send(f"```\n{func_str} ← {func_expression}\n```")
+
 @bot.hybrid_command(name="calca", description="""
-                    Assigns value to the calculator memory.
+                    Assigns a value to the calculator memory. Check !help calc for more info about the calculator
                     Try !calca x 3
-                    and !calc 3x+2
+                    and !calc 3x + 2
                     """)
 async def calca(ctx: commands.Context, var: str, *, input: str):
-    '''Assigns Values to the calculator memory'''
-    out = calculator.calculate(format_input(input), calc_vars)
+    '''Assigns values to the calculator memory'''
+    out = calculator.calculate(format_input(input), vars=calc_vars, funcs=calc_funcs)
     if out == calculator.syntax_error:
         await ctx.send("Syntax Error.")
         return
@@ -552,25 +590,45 @@ async def calca(ctx: commands.Context, var: str, *, input: str):
     calc_vars[var] = out
     await ctx.send(f"```\n{var} ← {format_output(out, left_indent=(len(var) + 3))}\n```")
 
-@bot.hybrid_command(name="calcm", description="Sends the calculator memory")
+@bot.hybrid_command(name="calcm", description="Sends the calculator memory for variables")
 async def calcm(ctx: commands.Context):
-    '''Sends the calculator memory'''
+    '''Sends the calculator memory for variables'''
     memory_string = ""
     if calc_vars == {}:
-        await ctx.send("Nothing in memory.")
+        await ctx.send("Nothing in variable memory.")
         return
     for variable, value in calc_vars.items():
         memory_string += f"{variable}: {format_output(value, left_indent=(2 + len(variable)))}\n"
     if len(memory_string) >= 2000:
-        await ctx.send("Too many variables to display! Clear it please")
+        await ctx.send("Too many variables to display! Clear the memory with !calcmc please")
         return
     await ctx.send(f"```\n{memory_string}```")
 
-@bot.hybrid_command(name="calcmc", description="Clears the calculator memory")
+@bot.hybrid_command(name="calcmf", description="Sends the calculator memory for functions")
+async def calcm(ctx: commands.Context):
+    '''Sends the calculator memory for functions'''
+    memory_string = ""
+    if calc_funcs == {}:
+        await ctx.send("Nothing in function memory.")
+        return
+    for func_name, func in calc_funcs.items():
+        memory_string += f"{func_name}: {func['defstr']} = {func['exprstr']}\n"
+    if len(memory_string) >= 2000:
+        await ctx.send("Too many functions to display! Clear the memory with !calcmcf please")
+        return
+    await ctx.send(f"```\n{memory_string}```")
+
+@bot.hybrid_command(name="calcmc", description="Clears the calculator memory for variables")
 async def calcmc(ctx: commands.Context):
-    '''Clears the calculator memory'''
+    '''Clears the calculator memory for variables'''
     calc_vars.clear()
-    await ctx.send("Calculator Memory Cleared.")
+    await ctx.send("Calculator Variable Memory Cleared.")
+
+@bot.hybrid_command(name="calcmcf", description="Clears the calculator memory for functions")
+async def calcmc(ctx: commands.Context):
+    '''Clears the calculator memory for functions'''
+    calc_funcs.clear()
+    await ctx.send("Calculator Function Memory Cleared.")
 
 # endregion
 

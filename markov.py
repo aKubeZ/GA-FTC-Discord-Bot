@@ -70,4 +70,4 @@ def gen_response():
 
 def clear_response():
     global words_data
-    words_data = copy.copy(reset_data)
+    words_data = copy.deepcopy(reset_data)
